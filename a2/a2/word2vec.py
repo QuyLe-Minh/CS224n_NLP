@@ -66,9 +66,10 @@ def naiveSoftmaxLossAndGradient(
     ### to integer overflow. 
     prob = softmax(outsideVectors @ centerWordVec)
     loss = - np.log(prob[outsideWordIdx])
-    gradCenterVec = - (outsideVectors[outsideWordIdx] - np.sum(outsideVectors * prob[:, np.newaxis], axis = 0))
-    tmp = np.tile(centerWordVec, (outsideVectors.shape[0], 1))
-    gradOutsideVecs = - (tmp * (1- prob[:, np.newaxis]))
+    gradCenterVec = -outsideVectors[outsideWordIdx] + outsideVectors.T @ prob
+    prob = prob[:, np.newaxis]
+    gradOutsideVecs = prob * centerWordVec.T
+    gradOutsideVecs[outsideWordIdx] = gradOutsideVecs[outsideWordIdx] - centerWordVec
     ### END YOUR CODE
 
     return loss, gradCenterVec, gradOutsideVecs
@@ -115,10 +116,17 @@ def negSamplingLossAndGradient(
     ### YOUR CODE HERE (~10 Lines)
 
     ### Please use your implementation of sigmoid in here.
-    prob = sigmoid(outsideVectors @ centerWordVec)
-    prob = prob[:, np.newaxis]
-    uniques = np.unique(indices, return_counts=True)
-    loss = -(np.log(sigmoid(prob[outsideWordIdx])) + np.sum())
+    uniques, idx, counts = np.unique(indices, return_counts=True, return_index=True)
+    U = outsideVectors[uniques]
+    U[idx != 0] *= -1
+    
+    prob = sigmoid(U @ centerWordVec)   #sigmoid(U @ v_c)
+    loss = -(np.log(prob) * counts).sum()
+    gradCenterVec = - counts * (1 - prob) @ U
+
+    counts[idx == 0] *= -1
+    gradOutsideVecs = np.zeros_like(outsideVectors)
+    gradOutsideVecs[uniques] = counts[:, np.newaxis] * (1-prob[:, np.newaxis]) * centerWordVec[np.newaxis, :]
     ### END YOUR CODE
 
     return loss, gradCenterVec, gradOutsideVecs
