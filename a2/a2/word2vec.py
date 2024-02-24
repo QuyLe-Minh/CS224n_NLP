@@ -128,7 +128,6 @@ def negSamplingLossAndGradient(
     gradOutsideVecs = np.zeros_like(outsideVectors)
     gradOutsideVecs[uniques] = counts[:, np.newaxis] * (1-prob[:, np.newaxis]) * centerWordVec[np.newaxis, :]
     ### END YOUR CODE
-
     return loss, gradCenterVec, gradOutsideVecs
 
 
@@ -172,9 +171,14 @@ def skipgram(currentCenterWord, windowSize, outsideWords, word2Ind,
     gradOutsideVectors = np.zeros(outsideVectors.shape)
 
     ### YOUR CODE HERE (~8 Lines)
-
+    v_c = centerWordVectors[word2Ind[currentCenterWord]]
+    for s in outsideWords:
+        J, dv_c, dU = word2vecLossAndGradient(v_c, word2Ind[s], outsideVectors, dataset)
+        loss += J
+        gradCenterVecs[word2Ind[currentCenterWord]] += dv_c
+        gradOutsideVectors += dU
+            
     ### END YOUR CODE
-    
     return loss, gradCenterVecs, gradOutsideVectors
 
 
