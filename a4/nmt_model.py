@@ -82,7 +82,15 @@ class NMT(nn.Module):
         ###         https://pytorch.org/docs/stable/nn.html#torch.nn.Dropout
         ###     Conv1D Layer:
         ###         https://pytorch.org/docs/stable/generated/torch.nn.Conv1d.html
-
+        self.post_embed_cnn = nn.Conv1d(in_channels=embed_size, out_channels=embed_size, kernel_size=2, padding="same")
+        self.encoder = nn.LSTM(input_size=embed_size, hidden_size=hidden_size, bidirectional=True)
+        self.decoder = nn.LSTMCell(input_size = embed_size, hidden_size=hidden_size)
+        self.h_projection = nn.Linear(2*hidden_size, hidden_size, bias=False)
+        self.c_projection = nn.Linear(2*hidden_size, hidden_size, bias=False)
+        self.att_projection = nn.Linear(2*hidden_size, hidden_size, bias = False)
+        self.combined_output_projection = nn.Linear(3*hidden_size, hidden_size, bias=False)
+        self.target_vocab_projection = nn.Linear(hidden_size, len(vocab.tgt), bias=False)
+        self.dropout = nn.Dropout(p=dropout_rate)
         ### END YOUR CODE
 
     def forward(self, source: List[List[str]], target: List[List[str]]) -> torch.Tensor:
@@ -178,8 +186,17 @@ class NMT(nn.Module):
         ###         https://pytorch.org/docs/stable/generated/torch.permute.html
         ###     Tensor Reshape (a possible alternative to permute):
         ###         https://pytorch.org/docs/stable/generated/torch.Tensor.reshape.html
-
-
+        X = self.model_embeddings.source(source_padded)
+        X = self.post_embed_cnn(X.permute(1, 2, 0)).permute(2, 0, 1)
+        X = nn.utils.rnn.pack_padded_sequence(X, X.shape[0])    # remove inefficiency computing on 0 padded in a sequence => memory efficiency + ignore grad on pad
+        enc_hiddens, (last_hidden, last_cell) = self.encoder(X)
+        enc_hiddens = nn.utils.rnn.pad_packed_sequence(enc_hiddens, batch_first=True)
+        last_hidden_forward, last_hidden_backward = last_hidden
+        last_hidden = torch.cat([last_hidden_forward, last_hidden_backward], dim = -1)
+        cell_forward, cell_backward = last_cell
+        last_cell = torch.cat((cell_forward, cell_backward), dim = -1)
+        dec_init_state = (self.h_projection(last_hidden), self.c_projection(last_cell))
+        
         ### END YOUR CODE
 
         return enc_hiddens, dec_init_state
@@ -247,10 +264,17 @@ class NMT(nn.Module):
         ###         https://pytorch.org/docs/stable/torch.html#torch.cat
         ###     Tensor Stacking:
         ###         https://pytorch.org/docs/stable/torch.html#torch.stack
-
-
-
+        enc_hiddens_proj = self.att_projection(enc_hiddens_proj)    #2h -> h
+        Y = self.model_embeddings.target(target_padded)
+        Y = torch.split(Y, 1)
+        for y in Y:
+            y = y.squeeze(0)
+            y_bar = torch.cat((y, o_prev), dim = -1)
+            o_t = self.decoder(y_bar)
+            combined_outputs.append(o_t)
+            o_prev = o_t
         ### END YOUR CODE
+        combined_outputs = torch.stack(combined_outputs, dim = 0)
 
         return combined_outputs
 
